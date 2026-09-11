@@ -1,0 +1,56 @@
+{
+  "name": "pi-permission-llm-judge",
+  "version": "0.1.0",
+  "description": "Allow-or-ask LLM judge — a pi-permission-system Authorizer chain link. Reviews every ask with a cheap model, returns allow or defer only; the human decides the rest.",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#test/*": "./test/*"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "pi-coding-agent",
+    "permissions",
+    "authorizer",
+    "llm-judge",
+    "policy",
+    "access-control"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src",
+    "schemas",
+    "config/config.example.json",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.3",
+    "@earendil-works/pi-coding-agent": ">=0.79.0",
+    "@gotgenes/pi-permission-system": ">=27.0.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.4",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@gotgenes/pi-permission-system": "32.0.1",
+    "@types/node": "^22.15.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

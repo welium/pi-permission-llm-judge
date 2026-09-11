@@ -1,0 +1,136 @@
+/**
+ * Extension wiring: load the config at `session_start`, register the
+ * `"llm-judge"` link from the `permissions:ready` handler, and dispose on
+ * shutdown.
+ *
+ * The ready event fires at least once per session and may repeat, and its
+ * latch emission at the node's first `before_agent_start` runs after every
+ * extension's `session_start` — so the handler alone is a sufficient
+ * registration site, needing only an idempotence guard. The event's
+ * `sessionId` keys the service of the node that emitted it, which is the node
+ * whose chain consults this link.
+ */
+
+// `complete` lives on pi-ai's `compat` entrypoint from 0.84 on. Pi's extension
+// loader maps the pi-ai *root* to that same compat module for extensions, so
+// both spellings resolve to one object at runtime; naming it explicitly is what
+// typechecks against the pinned SDK.
+import { complete as realComplete } from "@earendil-works/pi-ai/compat";
+import {
+  type ExtensionAPI,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
+import type { PermissionsReadyEvent } from "@gotgenes/pi-permission-system";
+import {
+  getPermissionsService,
+  PERMISSIONS_READY_CHANNEL,
+} from "@gotgenes/pi-permission-system";
+
+import { type LoadConfigResult, loadLlmJudgeConfig } from "./config-loader.js";
+import {
+  LLM_JUDGE_EXTENSION_ID,
+  type LlmJudgeConfig,
+} from "./config-schema.js";
+import { createJudgeReviewer } from "./judge-reviewer.js";
+import type { CompleteFn, ModelRegistryLike } from "./model-review.js";
+
+/** The operator-facing chain-link name referenced from `authorizerChain`. */
+const LINK_NAME = "llm-judge";
+
+/** Injectable seams; production defaults read the filesystem and call the model. */
+export interface LlmJudgeDependencies {
+  loadConfig?: (cwd: string) => LoadConfigResult;
+  complete?: CompleteFn;
+}
+
+function warn(message: string): void {
+  console.warn(`[${LLM_JUDGE_EXTENSION_ID}] ${message}`);
+}
+
+export function createLlmJudgeExtension(
+  pi: ExtensionAPI,
+  dependencies: LlmJudgeDependencies = {},
+): void {
+  // `getAgentDir()` is read here rather than hoisted out of the lambda so the
+  // env read happens only on the production path, and only when a config is
+  // actually loaded — it honors `PI_CODING_AGENT_DIR`, matching where
+  // pi-permission-system looks for the same global scope.
+  const loadConfig =
+    dependencies.loadConfig ??
+    ((cwd: string) => loadLlmJudgeConfig({ cwd, agentDir: getAgentDir() }));
+  const complete: CompleteFn =
+    dependencies.complete ??
+    ((model, context, options) => realComplete(model, context, options));
+
+  let config: LlmJudgeConfig | undefined;
+  let registry: ModelRegistryLike | undefined;
+  let cwd: string | undefined;
+  let dispose: (() => void) | undefined;
+  let warnedUnresolvedService = false;
+
+  pi.on("session_start", (_event, ctx) => {
+    const result = loadConfig(ctx.cwd);
+    config = result.config;
+    registry = ctx.modelRegistry;
+    cwd = ctx.cwd;
+    for (const issue of result.issues) {
+      warn(
+        `config issue at ${issue.sourcePath ?? "(merged)"} — ${issue.path}: ${issue.message}`,
+      );
+    }
+  });
+
+  pi.events.on(PERMISSIONS_READY_CHANNEL, (data) => {
+    // A repeat emission must be a no-op: the latch emission at the first
+    // `before_agent_start` would otherwise hit the duplicate-registration
+    // throw on the second call.
+    if (dispose || !config) {
+      return;
+    }
+    const sessionId = readySessionId(data);
+    const service =
+      sessionId === null ? undefined : getPermissionsService(sessionId);
+    if (!service) {
+      warnUnresolvedService();
+      return;
+    }
+    const authorize = createJudgeReviewer({
+      getConfig: () => config,
+      getRegistry: () => registry,
+      getCwd: () => cwd,
+      complete,
+    });
+    dispose = service.registerAuthorizer(LINK_NAME, authorize);
+  });
+
+  pi.on("session_shutdown", () => {
+    dispose?.();
+    dispose = undefined;
+    config = undefined;
+    registry = undefined;
+    cwd = undefined;
+    warnedUnresolvedService = false;
+  });
+
+  /**
+   * Report, once per session, that the link this session was configured for is
+   * not registered — the vacancy would otherwise be visible only as the
+   * absence of `llm_judge` entries in the review log.
+   */
+  function warnUnresolvedService(): void {
+    if (warnedUnresolvedService) {
+      return;
+    }
+    warnedUnresolvedService = true;
+    warn(
+      "this session's node published no permission service, so the llm-judge link is not registered — @gotgenes/pi-permission-system 27.0.0 or later must be loaded in the same session.",
+    );
+  }
+}
+
+/** The payload's session id, or `null` for any shape that cannot key the locator. */
+function readySessionId(data: unknown): string | null {
+  const sessionId = (data as Partial<PermissionsReadyEvent> | undefined)
+    ?.sessionId;
+  return typeof sessionId === "string" ? sessionId : null;
+}

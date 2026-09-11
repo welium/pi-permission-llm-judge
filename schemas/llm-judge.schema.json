@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-2020-12/schema#",
+  "$id": "https://raw.githubusercontent.com/welium/pi-permission-llm-judge/main/schemas/llm-judge.schema.json",
+  "title": "pi-permission-llm-judge config",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "default": "bansos",
+      "description": "Model provider, resolved against Pi's model registry."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "default": "openrouter/free",
+      "description": "Model id within the provider."
+    },
+    "instructions": {
+      "type": "string",
+      "minLength": 1,
+      "description": "System prompt describing the allow-or-defer policy."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "default": 60000,
+      "description": "Per-review model-call budget in milliseconds; a timeout defers."
+    },
+    "maxEvidenceChars": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "default": 2000,
+      "description": "Cap on evidence text forwarded into the judge prompt."
+    }
+  },
+  "additionalProperties": false
+}

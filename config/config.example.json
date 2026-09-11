@@ -1,0 +1,7 @@
+{
+  "$schema": "https://raw.githubusercontent.com/welium/pi-permission-llm-judge/main/schemas/llm-judge.schema.json",
+  "provider": "bansos",
+  "model": "openrouter/free",
+  "timeoutMs": 60000,
+  "maxEvidenceChars": 2000
+}
